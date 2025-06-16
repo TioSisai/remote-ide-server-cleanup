@@ -262,6 +262,33 @@ if [[ ! -d "$CLI_SERVERS_DIR" ]]; then
     fi
 fi
 
+# check if the directory name is a valid commit hash
+is_valid_commit_hash() {
+    local dir_name="$1"
+    
+    # exclude known special directory names
+    case "$dir_name" in
+        "multiplex-server"|"cli"|"stable"|"insiders"|"latest")
+            return 1
+            ;;
+    esac
+    
+    # Git commit hash is usually 40 hex digits, but allows some variation:
+    # - Standard 40 hex digits string (most common)
+    # - Short SHA-1 hash (at least 7 digits, used for short version identifier)
+    # - May contain version suffix format (e.g. hash-version)
+    if [[ "$dir_name" =~ ^[a-f0-9]{7,40}$ ]]; then
+        return 0
+    fi
+    
+    # Check if it's a hash format with version suffix (e.g. hash-version)
+    if [[ "$dir_name" =~ ^[a-f0-9]{7,40}-[0-9a-zA-Z._-]+$ ]]; then
+        return 0
+    fi
+    
+    return 1
+}
+
 # Only continue if CLI_SERVERS_DIR actually exists
 if [[ -n "$CLI_SERVERS_DIR" ]]; then
     # Find all Server directories and sort by modification time
@@ -270,9 +297,16 @@ if [[ -n "$CLI_SERVERS_DIR" ]]; then
     
     while IFS= read -r -d '' dir; do
         if [[ -d "$dir" ]]; then
-            mtime=$(get_mtime "$dir")
-            server_dirs+=("$dir")
-            server_times["$dir"]="$mtime"
+            dir_name=$(basename "$dir")
+            # only process directories that are valid commit hashes
+            if is_valid_commit_hash "$dir_name"; then
+                mtime=$(get_mtime "$dir")
+                server_dirs+=("$dir")
+                server_times["$dir"]="$mtime"
+                log_verbose "Found valid server version: $dir_name"
+            else
+                log_verbose "Skipping non-version directory: $dir_name (not a valid commit hash)"
+            fi
         fi
     done < <(find "$CLI_SERVERS_DIR" -maxdepth 1 -mindepth 1 -type d -print0 2>/dev/null)
     
